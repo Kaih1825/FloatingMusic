@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 卡片的圓角大小，現代簡約風格通常較大 -->
+    <dimen name="card_corner_radius">20dp</dimen>
+
+    <!-- 專輯封面的寬度，高度將佔滿卡片 -->
+    <dimen name="album_cover_width">100dp</dimen>
+
+    <!-- 專輯封面的圓角，只需設置左側與卡片一致 -->
+    <dimen name="album_cover_corner_radius">20dp</dimen>
+</resources>

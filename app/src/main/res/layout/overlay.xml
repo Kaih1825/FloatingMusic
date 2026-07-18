@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <!-- 使用一般 Layout + bg_right_pill + clipToOutline，取代容易在懸浮視窗失效的 MaterialCardView -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/cardOverlay"
+        android:layout_width="340dp"
+        android:layout_height="72dp"
+        android:background="@drawable/bg_right_pill"
+        android:clipToOutline="true"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <!-- 1. 專輯封面：使用 ShapeableImageView 強制裁切圓角，避免 WindowManager 底下 CardView 裁切失效 -->
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/ivAlbumCover"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:scaleType="centerCrop"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.RightPill"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+            <!-- 2. 遮罩：左透明右深色，讓左側展示封面色彩，右側文字清晰可讀 -->
+            <View
+                android:id="@+id/albumScrim"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:background="@drawable/card_scrim"
+                android:clickable="false"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+            <!-- 3. 文字：從 110dp 開始到右側，左側保留給封面視覺 -->
+            <LinearLayout
+                android:id="@+id/layoutText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_vertical"
+                android:paddingEnd="20dp"
+                android:layout_marginStart="110dp"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent">
+
+                <!-- 
+                    解法：不用內部的 gravity="end"（會導致跑馬燈 Bug），
+                    而是讓 TextView 本身 wrap_content，然後用 layout_gravity="end" 把整個 TextView 推到右邊。
+                    這樣短字會靠右，長字會撐滿並完美執行跑馬燈！
+                -->
+                <TextView
+                    android:id="@+id/tvSongTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="end"
+                    android:text="Song Title"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="#FFFFFF"
+                    android:letterSpacing="0.01"
+                    android:singleLine="true"
+                    android:ellipsize="marquee"
+                    android:marqueeRepeatLimit="marquee_forever"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:requiresFadingEdge="horizontal"
+                    android:fadingEdgeLength="16dp" />
+
+                <TextView
+                    android:id="@+id/tvArtist"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="end"
+                    android:text="Artist Name"
+                    android:textSize="13sp"
+                    android:textColor="#DDFFFFFF"
+                    android:layout_marginTop="4dp"
+                    android:singleLine="true"
+                    android:ellipsize="marquee"
+                    android:marqueeRepeatLimit="marquee_forever"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:requiresFadingEdge="horizontal"
+                    android:fadingEdgeLength="16dp" />
+
+            </LinearLayout>
+
+            <!-- 4. 觸控覆層 -->
+            <net.skailine.floatingmusic.CardTouchOverlayView
+                android:id="@+id/cardTouchOverlay"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:background="@null"
+                android:foreground="@null"
+                android:clickable="true"
+                android:focusable="true"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

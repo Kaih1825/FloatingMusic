@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="SweepTouchView">
+        <!-- 掃光方向：0=左到右, 1=右到左, 2=從中間往外 -->
+        <attr name="sweepDirection" format="enum">
+            <enum name="leftToRight" value="0" />
+            <enum name="rightToLeft" value="1" />
+            <enum name="centerOut" value="2" />
+        </attr>
+        <!-- 掃光顏色（預設半透明白） -->
+        <attr name="sweepColor" format="color" />
+    </declare-styleable>
+</resources>

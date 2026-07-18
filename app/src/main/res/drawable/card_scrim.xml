@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 從左（透明）到右（深色遮罩）的線性漸層，讓左側專輯封面清晰可見，右側文字區深色易讀 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:startColor="#00101820"
+        android:endColor="#F0101820"
+        android:angle="0" />
+    <!-- 配合卡片的 RightPill 形狀：左側直角(0dp)，右側半圓(35dp) -->
+    <corners
+        android:topLeftRadius="0dp"
+        android:bottomLeftRadius="0dp"
+        android:topRightRadius="35dp"
+        android:bottomRightRadius="35dp" />
+</shape>
