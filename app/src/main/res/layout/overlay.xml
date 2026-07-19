@@ -22,6 +22,7 @@
             android:layout_height="match_parent">
 
             <!-- 1. 專輯封面：使用 ShapeableImageView 強制裁切圓角，避免 WindowManager 底下 CardView 裁切失效 -->
+            <!-- 1. 專輯封面：使用 ShapeableImageView 強制裁切圓角，避免 WindowManager 底下 CardView 裁切失效 -->
             <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/ivAlbumCover"
                 android:layout_width="0dp"
@@ -100,6 +101,20 @@
                     android:fadingEdgeLength="16dp" />
 
             </LinearLayout>
+            
+            <!-- 5. 音樂進度條 (超薄質感底線) - 置於最上層但變得極細，並移除底色軌道 -->
+            <ProgressBar
+                android:id="@+id/pbMusicProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="3dp"
+                android:progressTint="#FFFFFFFF"
+                android:progressBackgroundTint="@android:color/transparent"
+                android:max="1000"
+                android:progress="0"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
 
             <!-- 4. 觸控覆層 -->
             <net.skailine.floatingmusic.CardTouchOverlayView

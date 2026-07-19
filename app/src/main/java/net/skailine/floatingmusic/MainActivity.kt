@@ -165,6 +165,23 @@ fun AdaptiveSettingsScreen(
             var alignLeft by remember { mutableStateOf(prefs.getBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)) }
             var overlaySize by remember { mutableFloatStateOf(prefs.getInt(MainActivity.KEY_OVERLAY_SIZE, 50).toFloat()) }
 
+            DisposableEffect(prefs) {
+                val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
+                    when (key) {
+                        MainActivity.KEY_CORNER_TOP_LEFT -> topLeft = sharedPreferences.getBoolean(key, false)
+                        MainActivity.KEY_CORNER_TOP_RIGHT -> topRight = sharedPreferences.getBoolean(key, true)
+                        MainActivity.KEY_CORNER_BOTTOM_LEFT -> bottomLeft = sharedPreferences.getBoolean(key, false)
+                        MainActivity.KEY_CORNER_BOTTOM_RIGHT -> bottomRight = sharedPreferences.getBoolean(key, true)
+                        MainActivity.KEY_TEXT_ALIGN_LEFT -> alignLeft = sharedPreferences.getBoolean(key, false)
+                        MainActivity.KEY_OVERLAY_SIZE -> overlaySize = sharedPreferences.getInt(key, 50).toFloat()
+                    }
+                }
+                prefs.registerOnSharedPreferenceChangeListener(listener)
+                onDispose {
+                    prefs.unregisterOnSharedPreferenceChangeListener(listener)
+                }
+            }
+
             val updatePref: (String, Boolean) -> Unit = { key, value ->
                 prefs.edit { putBoolean(key, value) }
             }

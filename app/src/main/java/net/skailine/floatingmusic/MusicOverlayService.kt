@@ -37,6 +37,16 @@ class MusicOverlayService : NotificationListenerService() {
     private var currentController: MediaController? = null
     private val controllerCallbacks = mutableMapOf<MediaController, MediaController.Callback>()
     private var isOverlayAdded = false
+    
+    private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val progressUpdater = object : Runnable {
+        override fun run() {
+            updateProgress()
+            if (currentController?.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING) {
+                uiHandler.postDelayed(this, 1000)
+            }
+        }
+    }
 
     // 監聽 SharedPreferences 變化，即時套用圓角（同 process 直接觸發，不需廣播）
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -295,6 +305,39 @@ class MusicOverlayService : NotificationListenerService() {
                 overlayParams.x += dx.toInt()
                 overlayParams.y += dy.toInt()
                 windowManager.updateViewLayout(overlayView, overlayParams)
+                
+                // 準確計算「貼齊邊緣」的位置
+                // Gravity.CENTER_HORIZONTAL 讓 x=0 代表置中。
+                // 當懸浮窗貼齊左側緣時，x 會是 -(screenWidth/2 - viewWidth/2)
+                val screenWidth = resources.displayMetrics.widthPixels
+                val viewHalfWidth = overlayView.width / 2f
+                val maxSafeX = (screenWidth / 2f) - viewHalfWidth
+                
+                // 設定一個寬鬆的閾值：只要離邊緣剩下不到 40px 的距離，就當作他要貼齊邊緣
+                val edgeThreshold = if (maxSafeX > 40f) maxSafeX - 40f else 0f
+                
+                val currentIsAlignLeft = prefs.getBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)
+                
+                // 如果被推到極左側邊緣 (超過負的邊界閾值)
+                if (overlayParams.x < -edgeThreshold && currentIsAlignLeft) {
+                    prefs.edit()
+                        .putBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)
+                        .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, false)
+                        .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, false)
+                        .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
+                        .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
+                        .apply()
+                } 
+                // 如果被推到極右側邊緣
+                else if (overlayParams.x > edgeThreshold && !currentIsAlignLeft) {
+                    prefs.edit()
+                        .putBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, true)
+                        .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, true)
+                        .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, true)
+                        .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, false)
+                        .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, false)
+                        .apply()
+                }
             }
 
             override fun onDragEnd() {
@@ -395,11 +438,57 @@ class MusicOverlayService : NotificationListenerService() {
                 .findViewById<com.google.android.material.imageview.ShapeableImageView>(R.id.ivAlbumCover)
             if (albumArt != null) {
                 ivAlbumCover.setImageBitmap(albumArt)
+                
+                // Extract vibrant color using Palette
+                androidx.palette.graphics.Palette.from(albumArt).generate { palette ->
+                    // 優先使用 LightVibrant 確保在暗色遮罩上夠亮夠顯眼
+                    val color = palette?.lightVibrantSwatch?.rgb
+                        ?: palette?.vibrantSwatch?.rgb
+                        ?: palette?.lightMutedSwatch?.rgb
+                        ?: android.graphics.Color.WHITE
+                        
+                    val pb = overlayView.findViewById<android.widget.ProgressBar>(R.id.pbMusicProgress)
+                    pb?.progressTintList = android.content.res.ColorStateList.valueOf(color)
+                    // 為了質感，完全移除底色軌道，只保留推進中的細線
+                    pb?.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
+                }
             } else {
                 ivAlbumCover.setBackgroundColor(android.graphics.Color.DKGRAY)
                 ivAlbumCover.setImageDrawable(null)
+                
+                val pb = overlayView.findViewById<android.widget.ProgressBar>(R.id.pbMusicProgress)
+                pb?.progressTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE)
+                pb?.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
+            }
+            
+            uiHandler.removeCallbacks(progressUpdater)
+            if (state == android.media.session.PlaybackState.STATE_PLAYING) {
+                uiHandler.post(progressUpdater)
+            } else {
+                updateProgress()
             }
         }
+    }
+
+    private fun updateProgress() {
+        if (!::overlayView.isInitialized || !isOverlayAdded) return
+        val metadata = currentController?.metadata ?: return
+        val state = currentController?.playbackState ?: return
+        
+        val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
+        if (duration <= 0) {
+            overlayView.findViewById<android.widget.ProgressBar>(R.id.pbMusicProgress)?.progress = 0
+            return
+        }
+        
+        var position = state.position
+        if (state.state == android.media.session.PlaybackState.STATE_PLAYING) {
+            val timeDelta = android.os.SystemClock.elapsedRealtime() - state.lastPositionUpdateTime
+            position += (timeDelta * state.playbackSpeed).toLong()
+        }
+        
+        val progress = (position.toFloat() / duration.toFloat() * 1000).toInt()
+        overlayView.findViewById<android.widget.ProgressBar>(R.id.pbMusicProgress)?.progress = progress.coerceIn(0, 1000)
     }
 
     // ── 生命週期 ──────────────────────────────────────────────────────────────
@@ -413,6 +502,7 @@ class MusicOverlayService : NotificationListenerService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        uiHandler.removeCallbacks(progressUpdater)
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         controllerCallbacks.forEach { (controller, callback) ->
             controller.unregisterCallback(callback)
