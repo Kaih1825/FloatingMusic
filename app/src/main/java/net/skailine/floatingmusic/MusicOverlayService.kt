@@ -197,13 +197,26 @@ class MusicOverlayService : NotificationListenerService() {
             .setBottomLeftCornerSize(if (bottomLeft) r else 0f)
             .build()
 
-        // 1. 透過 MaterialCardView 統一處理所有內部元件的裁切（完美支援不規則圓角）
+        // cornerRadii 順序：TL, TR, BR, BL（順時針，每角兩個值 x/y）
+        val radii = floatArrayOf(
+            if (topLeft)     r else 0f, if (topLeft)     r else 0f,
+            if (topRight)    r else 0f, if (topRight)    r else 0f,
+            if (bottomRight) r else 0f, if (bottomRight) r else 0f,
+            if (bottomLeft)  r else 0f, if (bottomLeft)  r else 0f
+        )
+
+        // 1. 透過 MaterialCardView 處理背景
         card.shapeAppearanceModel = shapeModel
         
-        // 強制使用軟體渲染，解決在車機或特定 Android 版本上硬體加速導致的 Canvas.clipPath() 失效問題
-        card.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        // 2. 透過自訂的 ClippedFrameLayout 強制使用軟體渲染進行 clipPath
+        // 這是為了確保子元件（例如進度條）在 72dp 的完整高度下，能夠被正確裁切 35dp 的大圓角
+        val clippedContainer = overlayView.findViewById<net.skailine.floatingmusic.ClippedFrameLayout>(R.id.clippedContainer)
+        if (clippedContainer != null) {
+            clippedContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            clippedContainer.cornerRadii = radii
+        }
 
-        // 2. 同步更新 ShapeableImageView 裁切形狀 (保證在舊裝置也能裁切)
+        // 3. 同步更新 ShapeableImageView 裁切形狀 (保證在舊裝置也能裁切)
         ivAlbumCover?.shapeAppearanceModel = shapeModel
         albumScrim?.shapeAppearanceModel = shapeModel
     }

@@ -18,147 +18,152 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <androidx.constraintlayout.widget.ConstraintLayout
+        <net.skailine.floatingmusic.ClippedFrameLayout
+            android:id="@+id/clippedContainer"
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
-            <!-- 1. 專輯封面：使用 ShapeableImageView 強制裁切圓角，避免 WindowManager 底下 CardView 裁切失效 -->
-            <!-- 1. 專輯封面：使用 ShapeableImageView 強制裁切圓角，避免 WindowManager 底下 CardView 裁切失效 -->
-            <com.google.android.material.imageview.ShapeableImageView
-                android:id="@+id/ivAlbumCover"
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:scaleType="centerCrop"
-                app:shapeAppearanceOverlay="@style/ShapeAppearance.RightPill"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent" />
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
 
-            <!-- 2. 遮罩：改用 ShapeableImageView 自己處理裁切，避免依賴 ViewGroup 裁切 (車機容易失效) -->
-            <com.google.android.material.imageview.ShapeableImageView
-                android:id="@+id/albumScrim"
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                app:srcCompat="@drawable/card_scrim"
-                android:scaleType="fitXY"
-                android:clickable="false"
-                app:shapeAppearanceOverlay="@style/ShapeAppearance.RightPill"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent" />
+                <!-- 1. 專輯封面：使用 ShapeableImageView 強制裁切圓角，避免 WindowManager 底下 CardView 裁切失效 -->
+                <!-- 1. 專輯封面：使用 ShapeableImageView 強制裁切圓角，避免 WindowManager 底下 CardView 裁切失效 -->
+                <com.google.android.material.imageview.ShapeableImageView
+                    android:id="@+id/ivAlbumCover"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:scaleType="centerCrop"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.RightPill"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent" />
 
-            <!-- 3. 文字：從 110dp 開始到右側，左側保留給封面視覺 -->
-            <LinearLayout
-                android:id="@+id/layoutText"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center_vertical"
-                android:paddingEnd="20dp"
-                android:layout_marginStart="110dp"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent">
+                <!-- 2. 遮罩：改用 ShapeableImageView 自己處理裁切，避免依賴 ViewGroup 裁切 (車機容易失效) -->
+                <com.google.android.material.imageview.ShapeableImageView
+                    android:id="@+id/albumScrim"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    app:srcCompat="@drawable/card_scrim"
+                    android:scaleType="fitXY"
+                    android:clickable="false"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.RightPill"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent" />
 
-                <!-- 
-                    解法：不用內部的 gravity="end"（會導致跑馬燈 Bug），
-                    而是讓 TextView 本身 wrap_content，然後用 layout_gravity="end" 把整個 TextView 推到右邊。
-                    這樣短字會靠右，長字會撐滿並完美執行跑馬燈！
-                -->
-                <androidx.constraintlayout.widget.ConstraintLayout
-                    android:id="@+id/layoutTitleWrapper"
-                    android:layout_width="wrap_content"
+                <!-- 3. 文字：從 110dp 開始到右側，左側保留給封面視覺 -->
+                <LinearLayout
+                    android:id="@+id/layoutText"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="end">
+                    android:orientation="vertical"
+                    android:gravity="center_vertical"
+                    android:paddingEnd="20dp"
+                    android:layout_marginStart="110dp"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent">
 
-                    <TextView
-                        android:id="@+id/tvSongTitle"
+                    <!-- 
+                        解法：不用內部的 gravity="end"（會導致跑馬燈 Bug），
+                        而是讓 TextView 本身 wrap_content，然後用 layout_gravity="end" 把整個 TextView 推到右邊。
+                        這樣短字會靠右，長字會撐滿並完美執行跑馬燈！
+                    -->
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:id="@+id/layoutTitleWrapper"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Song Title"
-                        android:textSize="18sp"
-                        android:textStyle="bold"
-                        android:textColor="#FFFFFF"
-                        android:letterSpacing="0.01"
+                        android:layout_gravity="end">
+
+                        <TextView
+                            android:id="@+id/tvSongTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Song Title"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:textColor="#FFFFFF"
+                            android:letterSpacing="0.01"
+                            android:singleLine="true"
+                            android:ellipsize="marquee"
+                            android:marqueeRepeatLimit="marquee_forever"
+                            android:focusable="true"
+                            android:focusableInTouchMode="true"
+                            android:requiresFadingEdge="horizontal"
+                            android:fadingEdgeLength="16dp"
+                            app:layout_constrainedWidth="true"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintEnd_toStartOf="@+id/ivFavoriteIcon" />
+
+                        <!-- 加入最愛狀態圖示 (放在歌名右邊) -->
+                        <ImageView
+                            android:id="@+id/ivFavoriteIcon"
+                            android:layout_width="14dp"
+                            android:layout_height="14dp"
+                            android:layout_marginStart="4dp"
+                            android:src="@drawable/ic_add_circle"
+                            android:visibility="gone"
+                            app:layout_constraintStart_toEndOf="@id/tvSongTitle"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintEnd_toEndOf="parent" />
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    <TextView
+                        android:id="@+id/tvArtist"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end"
+                        android:text="Artist Name"
+                        android:textSize="13sp"
+                        android:textColor="#DDFFFFFF"
+                        android:layout_marginTop="4dp"
                         android:singleLine="true"
                         android:ellipsize="marquee"
                         android:marqueeRepeatLimit="marquee_forever"
                         android:focusable="true"
                         android:focusableInTouchMode="true"
                         android:requiresFadingEdge="horizontal"
-                        android:fadingEdgeLength="16dp"
-                        app:layout_constrainedWidth="true"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="parent"
-                        app:layout_constraintBottom_toBottomOf="parent"
-                        app:layout_constraintEnd_toStartOf="@+id/ivFavoriteIcon" />
+                        android:fadingEdgeLength="16dp" />
 
-                    <!-- 加入最愛狀態圖示 (放在歌名右邊) -->
-                    <ImageView
-                        android:id="@+id/ivFavoriteIcon"
-                        android:layout_width="14dp"
-                        android:layout_height="14dp"
-                        android:layout_marginStart="4dp"
-                        android:src="@drawable/ic_add_circle"
-                        android:visibility="gone"
-                        app:layout_constraintStart_toEndOf="@id/tvSongTitle"
-                        app:layout_constraintTop_toTopOf="parent"
-                        app:layout_constraintBottom_toBottomOf="parent"
-                        app:layout_constraintEnd_toEndOf="parent" />
-                </androidx.constraintlayout.widget.ConstraintLayout>
+                </LinearLayout>
+                
+                <!-- 5. 音樂進度條 (超薄質感底線) - 置於最上層但變得極細，並移除底色軌道 -->
+                <ProgressBar
+                    android:id="@+id/pbMusicProgress"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="0dp"
+                    android:layout_height="3dp"
+                    android:progressTint="#FFFFFFFF"
+                    android:progressBackgroundTint="@android:color/transparent"
+                    android:max="1000"
+                    android:progress="0"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent" />
 
-                <TextView
-                    android:id="@+id/tvArtist"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="end"
-                    android:text="Artist Name"
-                    android:textSize="13sp"
-                    android:textColor="#DDFFFFFF"
-                    android:layout_marginTop="4dp"
-                    android:singleLine="true"
-                    android:ellipsize="marquee"
-                    android:marqueeRepeatLimit="marquee_forever"
+                <!-- 4. 觸控覆層 -->
+                <net.skailine.floatingmusic.CardTouchOverlayView
+                    android:id="@+id/cardTouchOverlay"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@null"
+                    android:foreground="@null"
+                    android:clickable="true"
                     android:focusable="true"
-                    android:focusableInTouchMode="true"
-                    android:requiresFadingEdge="horizontal"
-                    android:fadingEdgeLength="16dp" />
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent" />
 
-            </LinearLayout>
-            
-            <!-- 5. 音樂進度條 (超薄質感底線) - 置於最上層但變得極細，並移除底色軌道 -->
-            <ProgressBar
-                android:id="@+id/pbMusicProgress"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="0dp"
-                android:layout_height="3dp"
-                android:progressTint="#FFFFFFFF"
-                android:progressBackgroundTint="@android:color/transparent"
-                android:max="1000"
-                android:progress="0"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent" />
-
-            <!-- 4. 觸控覆層 -->
-            <net.skailine.floatingmusic.CardTouchOverlayView
-                android:id="@+id/cardTouchOverlay"
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:background="@null"
-                android:foreground="@null"
-                android:clickable="true"
-                android:focusable="true"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent" />
-
-        </androidx.constraintlayout.widget.ConstraintLayout>
-
+            </androidx.constraintlayout.widget.ConstraintLayout>
+        </net.skailine.floatingmusic.ClippedFrameLayout>
     </com.google.android.material.card.MaterialCardView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
