@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
         const val KEY_CORNER_BOTTOM_RIGHT = "corner_bottom_right"
         const val KEY_TEXT_ALIGN_LEFT = "text_align_left"
         const val KEY_OVERLAY_SIZE = "overlay_size"
+        const val KEY_OVERLAY_SHOW = "overlay_should_show"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,21 +53,30 @@ class MainActivity : ComponentActivity() {
                 ) {
                     AdaptiveSettingsScreen(
                         prefs = prefs,
-                        onStartClick = { checkPermissionsAndStart() },
-                        onStopClick = {
-                            val intent = Intent(this, MusicOverlayService::class.java).apply {
-                                action = MusicOverlayService.ACTION_HIDE_OVERLAY
-                            }
-                            startService(intent)
-                            Toast.makeText(this, "懸浮視窗已隱藏", Toast.LENGTH_SHORT).show()
-                        }
+                        onStartClick = { checkPermissionsAndStart(prefs) },
+                        onStopClick = { stopOverlay(prefs) }
                     )
                 }
             }
         }
     }
 
-    private fun checkPermissionsAndStart() {
+    private fun stopOverlay(prefs: SharedPreferences) {
+        // 使用 SharedPreferences 觸發隱藏
+        prefs.edit().putBoolean(KEY_OVERLAY_SHOW, false).apply()
+        
+        val intent = Intent(this, MusicOverlayService::class.java).apply {
+            action = MusicOverlayService.ACTION_HIDE_OVERLAY
+        }
+        try {
+            startService(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        Toast.makeText(this, "懸浮視窗已隱藏", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun checkPermissionsAndStart(prefs: SharedPreferences) {
         if (!hasOverlayPermission()) {
             Toast.makeText(this, "請開啟「顯示在其他應用程式上層」權限", Toast.LENGTH_SHORT).show()
             val intent = Intent(
@@ -91,10 +101,22 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        // 記錄要顯示
+        prefs.edit().putBoolean(KEY_OVERLAY_SHOW, true).apply()
+
         val intent = Intent(this, MusicOverlayService::class.java)
-        startService(intent)
+        try {
+            startService(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         Toast.makeText(this, "懸浮視窗已啟動！", Toast.LENGTH_SHORT).show()
+        
+        // 啟動後自動關閉主程式
+        finish()
     }
+
+
 
     private fun hasOverlayPermission(): Boolean {
         return Settings.canDrawOverlays(this)

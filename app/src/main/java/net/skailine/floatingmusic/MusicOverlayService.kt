@@ -49,7 +49,16 @@ class MusicOverlayService : NotificationListenerService() {
     }
 
     // 監聽 SharedPreferences 變化，即時套用圓角（同 process 直接觸發，不需廣播）
-    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPrefs, key ->
+        if (key == MainActivity.KEY_OVERLAY_SHOW) {
+            val shouldShow = sharedPrefs.getBoolean(key, false)
+            if (shouldShow) {
+                uiHandler.post { showOverlay() }
+            } else {
+                uiHandler.post { hideOverlay() }
+            }
+        }
+        
         val settingKeys = setOf(
             MainActivity.KEY_CORNER_TOP_LEFT,
             MainActivity.KEY_CORNER_TOP_RIGHT,
@@ -88,8 +97,7 @@ class MusicOverlayService : NotificationListenerService() {
 
     // ── Overlay 顯示 / 隱藏 ──────────────────────────────────────────────────
 
-    private fun showOverlay() {
-        if (isOverlayAdded) return
+    private fun createOverlayView() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         val themeContext = ContextThemeWrapper(
             this, com.google.android.material.R.style.Theme_MaterialComponents_DayNight
@@ -103,7 +111,7 @@ class MusicOverlayService : NotificationListenerService() {
         overlayParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -111,23 +119,47 @@ class MusicOverlayService : NotificationListenerService() {
             x = savedX
             y = savedY
         }
+        
+        setupTouchOverlay()
+    }
 
-        windowManager.addView(overlayView, overlayParams)
-        isOverlayAdded = true
-
-        // 等 View 完成 layout 後再套用設定，確保 width/height 已有值
-        overlayView.post { 
-            applyCornerSettings() 
+    private fun showOverlay() {
+        if (isOverlayAdded) return
+        
+        // 為了避免 WindowManager 重複 addView 造成的崩潰或失效，每次顯示都重新建立 View
+        if (::overlayView.isInitialized) {
+            try {
+                windowManager.removeView(overlayView)
+            } catch (e: Exception) {
+                // 忽略
+            }
+        }
+        
+        createOverlayView()
+        
+        try {
+            windowManager.addView(overlayView, overlayParams)
+            isOverlayAdded = true
+            
+            // 每次顯示時，強制套用一次設定
+            applyCornerSettings()
             applyTextAlignmentSettings()
             applySizeSettings()
+            
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
-        setupTouchOverlay()
+
         updateUI(currentController?.metadata)
     }
 
     private fun hideOverlay() {
         if (::overlayView.isInitialized && isOverlayAdded) {
-            windowManager.removeView(overlayView)
+            try {
+                windowManager.removeView(overlayView)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             isOverlayAdded = false
         }
     }
@@ -310,33 +342,54 @@ class MusicOverlayService : NotificationListenerService() {
                 // Gravity.CENTER_HORIZONTAL 讓 x=0 代表置中。
                 // 當懸浮窗貼齊左側緣時，x 會是 -(screenWidth/2 - viewWidth/2)
                 val screenWidth = resources.displayMetrics.widthPixels
-                val viewHalfWidth = overlayView.width / 2f
+                val actualWidth = if (overlayParams.width > 0) overlayParams.width else overlayView.width
+                val viewHalfWidth = actualWidth / 2f
                 val maxSafeX = (screenWidth / 2f) - viewHalfWidth
                 
-                // 設定一個寬鬆的閾值：只要離邊緣剩下不到 40px 的距離，就當作他要貼齊邊緣
-                val edgeThreshold = if (maxSafeX > 40f) maxSafeX - 40f else 0f
+                // 改為：必須「完全碰到」邊緣（或稍微超過）才當作邊緣吸附
+                // 這樣就不會發生「還沒碰到就提早判斷」的問題
+                val edgeThreshold = if (maxSafeX > 0) maxSafeX else 0f
                 
-                val currentIsAlignLeft = prefs.getBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)
+                val topLeft = prefs.getBoolean(MainActivity.KEY_CORNER_TOP_LEFT, false)
+                val topRight = prefs.getBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
+                val isSnappedLeft = !topLeft && topRight
+                val isSnappedRight = topLeft && !topRight
+                val isAllRounded = topLeft && topRight
                 
-                // 如果被推到極左側邊緣 (超過負的邊界閾值)
-                if (overlayParams.x < -edgeThreshold && currentIsAlignLeft) {
-                    prefs.edit()
-                        .putBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)
-                        .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, false)
-                        .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, false)
-                        .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
-                        .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
-                        .apply()
+                // 如果被推到極左側邊緣
+                if (overlayParams.x < -edgeThreshold) {
+                    if (!isSnappedLeft) {
+                        prefs.edit()
+                            .putBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)
+                            .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, false)
+                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, false)
+                            .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
+                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
+                            .apply()
+                    }
                 } 
                 // 如果被推到極右側邊緣
-                else if (overlayParams.x > edgeThreshold && !currentIsAlignLeft) {
-                    prefs.edit()
-                        .putBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, true)
-                        .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, true)
-                        .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, true)
-                        .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, false)
-                        .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, false)
-                        .apply()
+                else if (overlayParams.x > edgeThreshold) {
+                    if (!isSnappedRight) {
+                        prefs.edit()
+                            .putBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, true)
+                            .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, true)
+                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, true)
+                            .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, false)
+                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, false)
+                            .apply()
+                    }
+                }
+                // 在中間區域
+                else {
+                    if (!isAllRounded) {
+                        prefs.edit()
+                            .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, true)
+                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, true)
+                            .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
+                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
+                            .apply()
+                    }
                 }
             }
 
