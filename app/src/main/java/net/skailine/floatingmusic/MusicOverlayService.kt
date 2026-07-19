@@ -1,40 +1,66 @@
 package net.skailine.floatingmusic
+
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
+import android.graphics.Outline
+import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.RectF
+import android.graphics.drawable.GradientDrawable
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
-import android.os.Handler
-import android.os.Looper
+import android.os.Build
 import android.service.notification.NotificationListenerService
+import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.TextView
-import android.view.ContextThemeWrapper
 
 class MusicOverlayService : NotificationListenerService() {
+
+    companion object {
+        const val ACTION_HIDE_OVERLAY = "net.skailine.floatingmusic.HIDE_OVERLAY"
+    }
 
     private lateinit var windowManager: WindowManager
     private lateinit var overlayView: View
     private lateinit var mediaSessionManager: MediaSessionManager
     private lateinit var overlayParams: WindowManager.LayoutParams
+    private lateinit var prefs: SharedPreferences
 
     private var currentController: MediaController? = null
     private val controllerCallbacks = mutableMapOf<MediaController, MediaController.Callback>()
     private var isOverlayAdded = false
 
-    // 不再需要進度更新 Runnable
-
-
-    // 我們不再使用單一的 mediaCallback，而是針對每個 Session 建立獨立的 callback
-
+    // 監聽 SharedPreferences 變化，即時套用圓角（同 process 直接觸發，不需廣播）
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        val settingKeys = setOf(
+            MainActivity.KEY_CORNER_TOP_LEFT,
+            MainActivity.KEY_CORNER_TOP_RIGHT,
+            MainActivity.KEY_CORNER_BOTTOM_LEFT,
+            MainActivity.KEY_CORNER_BOTTOM_RIGHT,
+            MainActivity.KEY_TEXT_ALIGN_LEFT,
+            MainActivity.KEY_OVERLAY_SIZE
+        )
+        if (key in settingKeys && isOverlayAdded) {
+            overlayView.post {
+                applyCornerSettings()
+                applyTextAlignmentSettings()
+                applySizeSettings()
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
+        prefs = getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
     }
 
     override fun onListenerConnected() {
@@ -42,21 +68,25 @@ class MusicOverlayService : NotificationListenerService() {
         initMediaListener()
     }
 
-    override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        showOverlay()
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_HIDE_OVERLAY -> hideOverlay()
+            else                -> showOverlay()
+        }
         return super.onStartCommand(intent, flags, startId)
     }
+
+    // ── Overlay 顯示 / 隱藏 ──────────────────────────────────────────────────
 
     private fun showOverlay() {
         if (isOverlayAdded) return
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        val themeContext = ContextThemeWrapper(this, com.google.android.material.R.style.Theme_MaterialComponents_DayNight)
+        val themeContext = ContextThemeWrapper(
+            this, com.google.android.material.R.style.Theme_MaterialComponents_DayNight
+        )
         overlayView = LayoutInflater.from(themeContext).inflate(R.layout.overlay, null)
-        
-        // 預設先隱藏，直到有真正的音樂播放才顯示
         overlayView.visibility = View.GONE
 
-        val prefs = getSharedPreferences("OverlayPrefs", Context.MODE_PRIVATE)
         val savedX = prefs.getInt("x", 0)
         val savedY = prefs.getInt("y", 100)
 
@@ -75,8 +105,162 @@ class MusicOverlayService : NotificationListenerService() {
         windowManager.addView(overlayView, overlayParams)
         isOverlayAdded = true
 
+        // 等 View 完成 layout 後再套用設定，確保 width/height 已有值
+        overlayView.post { 
+            applyCornerSettings() 
+            applyTextAlignmentSettings()
+            applySizeSettings()
+        }
         setupTouchOverlay()
+        updateUI(currentController?.metadata)
     }
+
+    private fun hideOverlay() {
+        if (::overlayView.isInitialized && isOverlayAdded) {
+            windowManager.removeView(overlayView)
+            isOverlayAdded = false
+        }
+    }
+
+    // ── 圓角套用 ──────────────────────────────────────────────────────────────
+
+    /**
+     * 同步更新三個地方，讓圓角設定完全生效：
+     *
+     *   1. cardOverlay 背景（GradientDrawable）→ 控制黑色外框的視覺圓角
+     *   2. cardOverlay 的自訂 ViewOutlineProvider → 控制 clipToOutline 的裁切形狀
+     *      ※ 不能依賴 GradientDrawable.getOutline()：帶有 cornerRadii 陣列時，
+     *        內部 mPath 在首次繪製前尚未建立，invalidateOutline() 會靜默失敗。
+     *   3. ShapeableImageView.shapeAppearanceModel → 控制專輯封面的自身裁切形狀
+     */
+    private fun applyCornerSettings() {
+        val card = overlayView.findViewById<View>(R.id.cardOverlay) ?: return
+        val ivAlbumCover = overlayView
+            .findViewById<com.google.android.material.imageview.ShapeableImageView>(R.id.ivAlbumCover)
+
+        val topLeft     = prefs.getBoolean(MainActivity.KEY_CORNER_TOP_LEFT,     false)
+        val topRight    = prefs.getBoolean(MainActivity.KEY_CORNER_TOP_RIGHT,    true)
+        val bottomLeft  = prefs.getBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT,  false)
+        val bottomRight = prefs.getBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
+
+        val r = resources.displayMetrics.density * 35f // 35dp → px
+        // cornerRadii 順序：TL, TR, BR, BL（順時針，每角兩個值 x/y）
+        val radii = floatArrayOf(
+            if (topLeft)     r else 0f, if (topLeft)     r else 0f,
+            if (topRight)    r else 0f, if (topRight)    r else 0f,
+            if (bottomRight) r else 0f, if (bottomRight) r else 0f,
+            if (bottomLeft)  r else 0f, if (bottomLeft)  r else 0f
+        )
+
+        // 1. 更新視覺背景
+        card.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(0xD9101820.toInt())
+            cornerRadii = radii
+        }
+
+        // 2. 自訂 ViewOutlineProvider：直接建立 Path，不走 GradientDrawable.getOutline()
+        card.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                val path = Path().apply {
+                    addRoundRect(
+                        RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()),
+                        radii,
+                        Path.Direction.CW
+                    )
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    outline.setPath(path)
+                } else {
+                    @Suppress("DEPRECATION")
+                    outline.setConvexPath(path)
+                }
+            }
+        }
+        card.clipToOutline = true
+        card.invalidateOutline()
+
+        // 3. 同步更新 ShapeableImageView 裁切形狀
+        ivAlbumCover?.shapeAppearanceModel =
+            com.google.android.material.shape.ShapeAppearanceModel.builder()
+                .setTopLeftCornerSize(if (topLeft)     r else 0f)
+                .setTopRightCornerSize(if (topRight)    r else 0f)
+                .setBottomRightCornerSize(if (bottomRight) r else 0f)
+                .setBottomLeftCornerSize(if (bottomLeft)  r else 0f)
+                .build()
+    }
+
+    private fun applyTextAlignmentSettings() {
+        val isAlignLeft = prefs.getBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)
+        val layoutText = overlayView.findViewById<android.widget.LinearLayout>(R.id.layoutText)
+        val tvSongTitle = overlayView.findViewById<TextView>(R.id.tvSongTitle)
+        val tvArtist = overlayView.findViewById<TextView>(R.id.tvArtist)
+        val albumScrim = overlayView.findViewById<View>(R.id.albumScrim)
+
+        if (layoutText == null || tvSongTitle == null || tvArtist == null || albumScrim == null) return
+
+        val params = layoutText.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+        
+        if (isAlignLeft) {
+            // 文字在左，留出右邊 110dp 給封面，左邊 20dp padding
+            params.marginStart = (20 * resources.displayMetrics.density).toInt()
+            layoutText.setPadding(0, 0, (110 * resources.displayMetrics.density).toInt(), 0)
+            
+            // TextView 靠左
+            val titleParams = tvSongTitle.layoutParams as android.widget.LinearLayout.LayoutParams
+            titleParams.gravity = Gravity.START
+            tvSongTitle.layoutParams = titleParams
+            
+            val artistParams = tvArtist.layoutParams as android.widget.LinearLayout.LayoutParams
+            artistParams.gravity = Gravity.START
+            tvArtist.layoutParams = artistParams
+
+            // 反轉遮罩，讓深色在左邊
+            albumScrim.scaleX = -1f
+        } else {
+            // 文字在右，留出左邊 110dp 給封面，右邊 20dp padding
+            params.marginStart = (110 * resources.displayMetrics.density).toInt()
+            layoutText.setPadding(0, 0, (20 * resources.displayMetrics.density).toInt(), 0)
+            
+            // TextView 靠右
+            val titleParams = tvSongTitle.layoutParams as android.widget.LinearLayout.LayoutParams
+            titleParams.gravity = Gravity.END
+            tvSongTitle.layoutParams = titleParams
+            
+            val artistParams = tvArtist.layoutParams as android.widget.LinearLayout.LayoutParams
+            artistParams.gravity = Gravity.END
+            tvArtist.layoutParams = artistParams
+
+            // 恢復遮罩方向
+            albumScrim.scaleX = 1f
+        }
+        layoutText.layoutParams = params
+    }
+
+    private fun applySizeSettings() {
+        val progress = prefs.getInt(MainActivity.KEY_OVERLAY_SIZE, 50)
+        // 50 是 1.0 倍大小 (範圍：0.5倍 ~ 1.5倍)
+        val scale = 0.5f + (progress / 100f)
+
+        val card = overlayView.findViewById<View>(R.id.cardOverlay) ?: return
+        
+        // 1. 放縮卡片本身（包含文字、圖片都會一起等比例縮放）
+        card.scaleX = scale
+        card.scaleY = scale
+
+        // 2. 調整 WindowManager 的 LayoutParams 邊界，避免放大時被裁切
+        val baseWidthPx = (340 * resources.displayMetrics.density).toInt()
+        val baseHeightPx = (72 * resources.displayMetrics.density).toInt()
+
+        overlayParams.width = (baseWidthPx * scale).toInt()
+        overlayParams.height = (baseHeightPx * scale).toInt()
+
+        if (isOverlayAdded) {
+            windowManager.updateViewLayout(overlayView, overlayParams)
+        }
+    }
+
+    // ── 觸控 ──────────────────────────────────────────────────────────────────
 
     /**
      * 對接 CardTouchOverlayView：
@@ -114,7 +298,6 @@ class MusicOverlayService : NotificationListenerService() {
             }
 
             override fun onDragEnd() {
-                val prefs = getSharedPreferences("OverlayPrefs", Context.MODE_PRIVATE)
                 prefs.edit()
                     .putInt("x", overlayParams.x)
                     .putInt("y", overlayParams.y)
@@ -122,6 +305,8 @@ class MusicOverlayService : NotificationListenerService() {
             }
         }
     }
+
+    // ── Media Session ─────────────────────────────────────────────────────────
 
     private fun initMediaListener() {
         mediaSessionManager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
@@ -136,19 +321,18 @@ class MusicOverlayService : NotificationListenerService() {
     }
 
     private fun registerAllControllers(controllers: List<MediaController>) {
-        // 清除舊的 callbacks
         controllerCallbacks.forEach { (controller, callback) ->
             controller.unregisterCallback(callback)
         }
         controllerCallbacks.clear()
 
-        // 註冊所有活躍的 controllers
         controllers.forEach { controller ->
             val callback = object : MediaController.Callback() {
                 override fun onMetadataChanged(metadata: MediaMetadata?) {
                     super.onMetadataChanged(metadata)
-                    // 如果這個 app 正在播放，或是它已經是我們當前追蹤的對象，就更新
-                    if (controller.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING || currentController == controller) {
+                    if (controller.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING
+                        || currentController == controller
+                    ) {
                         currentController = controller
                         updateUI(metadata)
                     }
@@ -156,12 +340,10 @@ class MusicOverlayService : NotificationListenerService() {
 
                 override fun onPlaybackStateChanged(state: android.media.session.PlaybackState?) {
                     super.onPlaybackStateChanged(state)
-                    // 如果有任何 app 開始播放，立刻把焦點切換給它
                     if (state?.state == android.media.session.PlaybackState.STATE_PLAYING) {
                         currentController = controller
                         updateUI(controller.metadata)
                     } else if (currentController == controller) {
-                        // 如果是當前追蹤的 app 暫停或停止了，也要更新介面（可能會自動隱藏）
                         updateUI(controller.metadata)
                     }
                 }
@@ -169,12 +351,13 @@ class MusicOverlayService : NotificationListenerService() {
             controller.registerCallback(callback)
             controllerCallbacks[controller] = callback
 
-            // 預設先抓第一個，但如果有正在播放的，就優先選它
-            if (currentController == null || controller.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING) {
+            if (currentController == null ||
+                controller.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING
+            ) {
                 currentController = controller
             }
         }
-        
+
         updateUI(currentController?.metadata)
     }
 
@@ -184,14 +367,11 @@ class MusicOverlayService : NotificationListenerService() {
         val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
         val state = currentController?.playbackState?.state
 
-        // 如果沒有音樂名稱、名稱是未知，或者是完全停止/無狀態，就隱藏整個懸浮窗
-        val isInvalidState = state == android.media.session.PlaybackState.STATE_NONE || 
+        val isInvalidState = state == android.media.session.PlaybackState.STATE_NONE ||
                              state == android.media.session.PlaybackState.STATE_STOPPED
-        
+
         if (title.isNullOrBlank() || title == "未知歌曲" || isInvalidState) {
-            overlayView.post {
-                overlayView.visibility = View.GONE
-            }
+            overlayView.post { overlayView.visibility = View.GONE }
             return
         }
 
@@ -200,20 +380,19 @@ class MusicOverlayService : NotificationListenerService() {
             ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
 
         overlayView.post {
-            // 有有效的音樂資訊，確保懸浮窗顯示出來
             overlayView.visibility = View.VISIBLE
 
-            val tvTitle = overlayView.findViewById<TextView>(R.id.tvSongTitle)
-            val tvArtist = overlayView.findViewById<TextView>(R.id.tvArtist)
-            
-            tvTitle.text = title
-            tvArtist.text = artist
-            
-            // 必須設為 selected，跑馬燈才會開始動
-            tvTitle.isSelected = true
-            tvArtist.isSelected = true
+            overlayView.findViewById<TextView>(R.id.tvSongTitle).also {
+                it.text = title
+                it.isSelected = true
+            }
+            overlayView.findViewById<TextView>(R.id.tvArtist).also {
+                it.text = artist
+                it.isSelected = true
+            }
 
-            val ivAlbumCover = overlayView.findViewById<com.google.android.material.imageview.ShapeableImageView>(R.id.ivAlbumCover)
+            val ivAlbumCover = overlayView
+                .findViewById<com.google.android.material.imageview.ShapeableImageView>(R.id.ivAlbumCover)
             if (albumArt != null) {
                 ivAlbumCover.setImageBitmap(albumArt)
             } else {
@@ -223,30 +402,22 @@ class MusicOverlayService : NotificationListenerService() {
         }
     }
 
+    // ── 生命週期 ──────────────────────────────────────────────────────────────
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        // 當使用者從多工選單滑掉 App 時，主動把懸浮窗拆掉並停止服務
-        if (::overlayView.isInitialized && isOverlayAdded) {
-            windowManager.removeView(overlayView)
-            isOverlayAdded = false
-        }
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-            requestUnbind()
-        }
+        hideOverlay()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) requestUnbind()
         stopSelf()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         controllerCallbacks.forEach { (controller, callback) ->
             controller.unregisterCallback(callback)
         }
         controllerCallbacks.clear()
-        
-        if (::overlayView.isInitialized) {
-            windowManager.removeView(overlayView)
-        }
+        hideOverlay()
     }
 }

@@ -1,29 +1,124 @@
 package net.skailine.floatingmusic
+
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
+import android.widget.Switch
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 
 class MainActivity : AppCompatActivity() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        // 為了簡潔，這裡以程式碼建立按鈕，你也可以換成 setContentView(R.layout.activity_main)
-        val btnStart = Button(this).apply {
-            text = "啟動音樂懸浮視窗"
-            setOnClickListener { checkPermissionsAndStart() }
-        }
-        setContentView(btnStart)
+    companion object {
+        const val PREFS_NAME = "OverlayPrefs"
+        const val KEY_CORNER_TOP_LEFT     = "corner_top_left"
+        const val KEY_CORNER_TOP_RIGHT    = "corner_top_right"
+        const val KEY_CORNER_BOTTOM_LEFT  = "corner_bottom_left"
+        const val KEY_CORNER_BOTTOM_RIGHT = "corner_bottom_right"
+        const val KEY_TEXT_ALIGN_LEFT     = "text_align_left"
+        const val KEY_OVERLAY_SIZE        = "overlay_size"
     }
 
-    override fun onResume() {
-        super.onResume()
-        // 每次回到畫面時可選擇性自動檢查，此處交由按鈕觸發較不擾人
+    private lateinit var switchTopLeft: Switch
+    private lateinit var switchTopRight: Switch
+    private lateinit var switchBottomLeft: Switch
+    private lateinit var switchBottomRight: Switch
+    private lateinit var switchTextAlignLeft: Switch
+    private lateinit var seekOverlaySize: android.widget.SeekBar
+    private lateinit var tvOverlaySizeLabel: TextView
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        // 取得 Switch 參照
+        switchTopLeft     = findViewById(R.id.switchCornerTopLeft)
+        switchTopRight    = findViewById(R.id.switchCornerTopRight)
+        switchBottomLeft  = findViewById(R.id.switchCornerBottomLeft)
+        switchBottomRight = findViewById(R.id.switchCornerBottomRight)
+        switchTextAlignLeft = findViewById(R.id.switchTextAlignLeft)
+        seekOverlaySize = findViewById(R.id.seekOverlaySize)
+        tvOverlaySizeLabel = findViewById(R.id.tvOverlaySizeLabel)
+
+        // 載入已儲存的設定
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        switchTopLeft.isChecked     = prefs.getBoolean(KEY_CORNER_TOP_LEFT,     false)
+        switchTopRight.isChecked    = prefs.getBoolean(KEY_CORNER_TOP_RIGHT,    true)
+        switchBottomLeft.isChecked  = prefs.getBoolean(KEY_CORNER_BOTTOM_LEFT,  false)
+        switchBottomRight.isChecked = prefs.getBoolean(KEY_CORNER_BOTTOM_RIGHT, true)
+        switchTextAlignLeft.isChecked = prefs.getBoolean(KEY_TEXT_ALIGN_LEFT,   false)
+        
+        val savedProgress = prefs.getInt(KEY_OVERLAY_SIZE, 50)
+        seekOverlaySize.progress = savedProgress
+        updateSizeLabel(savedProgress)
+
+        // 每個 Switch 切換時立即儲存。
+        // Service 透過 OnSharedPreferenceChangeListener 監聽，會自動即時套用，不需廣播。
+        val saveCorners: () -> Unit = {
+            prefs.edit()
+                .putBoolean(KEY_CORNER_TOP_LEFT,     switchTopLeft.isChecked)
+                .putBoolean(KEY_CORNER_TOP_RIGHT,    switchTopRight.isChecked)
+                .putBoolean(KEY_CORNER_BOTTOM_LEFT,  switchBottomLeft.isChecked)
+                .putBoolean(KEY_CORNER_BOTTOM_RIGHT, switchBottomRight.isChecked)
+                .putBoolean(KEY_TEXT_ALIGN_LEFT,     switchTextAlignLeft.isChecked)
+                .putInt(KEY_OVERLAY_SIZE,            seekOverlaySize.progress)
+                .apply()
+        }
+
+        switchTopLeft.setOnCheckedChangeListener     { _, _ -> saveCorners() }
+        switchTopRight.setOnCheckedChangeListener    { _, _ -> saveCorners() }
+        switchBottomLeft.setOnCheckedChangeListener  { _, _ -> saveCorners() }
+        switchBottomRight.setOnCheckedChangeListener { _, _ -> saveCorners() }
+        switchTextAlignLeft.setOnCheckedChangeListener { _, _ -> saveCorners() }
+
+        seekOverlaySize.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                // 每 5 單位為一刻度 (0.05倍)
+                val snappedProgress = Math.round(progress / 5f) * 5
+                updateSizeLabel(snappedProgress)
+                if (fromUser) {
+                    // 即時儲存吸附後的數值，讓 Service 立即反應
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                        .putInt(KEY_OVERLAY_SIZE, snappedProgress)
+                        .apply()
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
+                // 放開手指時，讓滑桿的物理位置也吸附過去
+                seekBar?.let {
+                    val snappedProgress = Math.round(it.progress / 5f) * 5
+                    it.progress = snappedProgress
+                }
+            }
+        })
+
+        // 啟動按鈕
+        findViewById<Button>(R.id.btnStart).setOnClickListener {
+            checkPermissionsAndStart()
+        }
+
+        // 停止按鈕
+        // MusicOverlayService 繼承自 NotificationListenerService，由系統管理綁定，
+        // stopService() 對它無效。改用自訂 action 讓 Service 自己移除 overlay。
+        findViewById<Button>(R.id.btnStop).setOnClickListener {
+            val intent = Intent(this, MusicOverlayService::class.java).apply {
+                action = MusicOverlayService.ACTION_HIDE_OVERLAY
+            }
+            startService(intent)
+            Toast.makeText(this, "懸浮視窗已隱藏", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun updateSizeLabel(progress: Int) {
+        val scale = 0.5f + (progress / 100f)
+        tvOverlaySizeLabel.text = String.format("視窗大小 (%.2fx)", scale)
     }
 
     private fun checkPermissionsAndStart() {
@@ -50,11 +145,10 @@ class MainActivity : AppCompatActivity() {
                 ComponentName(this, MusicOverlayService::class.java)
             )
         }
-        
+
         val intent = Intent(this, MusicOverlayService::class.java)
         startService(intent)
         Toast.makeText(this, "懸浮視窗已啟動！", Toast.LENGTH_SHORT).show()
-        finish() // 啟動後關閉 MainActivity，保持背景運行
     }
 
     // 檢查懸浮視窗權限

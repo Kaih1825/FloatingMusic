@@ -5,10 +5,4 @@
         android:startColor="#00101820"
         android:endColor="#F0101820"
         android:angle="0" />
-    <!-- 配合卡片的 RightPill 形狀：左側直角(0dp)，右側半圓(35dp) -->
-    <corners
-        android:topLeftRadius="0dp"
-        android:bottomLeftRadius="0dp"
-        android:topRightRadius="35dp"
-        android:bottomRightRadius="35dp" />
 </shape>

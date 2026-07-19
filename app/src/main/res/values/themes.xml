@@ -15,8 +15,8 @@
     </style>
     <style name="ShapeAppearance.RightPill" parent="">
         <item name="cornerFamily">rounded</item>
-        <item name="cornerSizeTopRight">35dp</item>
-        <item name="cornerSizeBottomRight">35dp</item>
+        <item name="cornerSizeTopRight">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
         <item name="cornerSizeTopLeft">0dp</item>
         <item name="cornerSizeBottomLeft">0dp</item>
     </style>
