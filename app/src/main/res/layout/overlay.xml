@@ -5,13 +5,14 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content">
 
-    <!-- 使用一般 Layout + bg_right_pill + clipToOutline，取代容易在懸浮視窗失效的 MaterialCardView -->
-    <androidx.constraintlayout.widget.ConstraintLayout
+    <!-- 使用 MaterialCardView 解決在各種 Android 版本（包含車機）上的不規則裁切問題 -->
+    <com.google.android.material.card.MaterialCardView
         android:id="@+id/cardOverlay"
         android:layout_width="340dp"
         android:layout_height="72dp"
-        android:background="@drawable/bg_right_pill"
-        android:clipToOutline="true"
+        app:cardBackgroundColor="#D9101820"
+        app:strokeWidth="0dp"
+        app:cardElevation="0dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -34,13 +35,15 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent" />
 
-            <!-- 2. 遮罩：左透明右深色，讓左側展示封面色彩，右側文字清晰可讀 -->
-            <View
+            <!-- 2. 遮罩：改用 ShapeableImageView 自己處理裁切，避免依賴 ViewGroup 裁切 (車機容易失效) -->
+            <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/albumScrim"
                 android:layout_width="0dp"
                 android:layout_height="0dp"
-                android:background="@drawable/card_scrim"
+                app:srcCompat="@drawable/card_scrim"
+                android:scaleType="fitXY"
                 android:clickable="false"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.RightPill"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
@@ -156,6 +159,6 @@
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 
-    </androidx.constraintlayout.widget.ConstraintLayout>
+    </com.google.android.material.card.MaterialCardView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

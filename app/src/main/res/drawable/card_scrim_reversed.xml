@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 從左（深色遮罩）到右（透明）的線性漸層，讓右側專輯封面清晰可見，左側文字區深色易讀 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:startColor="#F0101820"
+        android:endColor="#00101820"
+        android:angle="0" />
+</shape>

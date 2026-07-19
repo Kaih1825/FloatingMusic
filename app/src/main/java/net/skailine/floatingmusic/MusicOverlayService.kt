@@ -177,9 +177,11 @@ class MusicOverlayService : NotificationListenerService() {
      *   3. ShapeableImageView.shapeAppearanceModel → 控制專輯封面的自身裁切形狀
      */
     private fun applyCornerSettings() {
-        val card = overlayView.findViewById<View>(R.id.cardOverlay) ?: return
+        val card = overlayView.findViewById<com.google.android.material.card.MaterialCardView>(R.id.cardOverlay) ?: return
         val ivAlbumCover = overlayView
             .findViewById<com.google.android.material.imageview.ShapeableImageView>(R.id.ivAlbumCover)
+        val albumScrim = overlayView
+            .findViewById<com.google.android.material.imageview.ShapeableImageView>(R.id.albumScrim)
 
         val topLeft     = prefs.getBoolean(MainActivity.KEY_CORNER_TOP_LEFT,     false)
         val topRight    = prefs.getBoolean(MainActivity.KEY_CORNER_TOP_RIGHT,    true)
@@ -187,50 +189,23 @@ class MusicOverlayService : NotificationListenerService() {
         val bottomRight = prefs.getBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
 
         val r = resources.displayMetrics.density * 35f // 35dp → px
-        // cornerRadii 順序：TL, TR, BR, BL（順時針，每角兩個值 x/y）
-        val radii = floatArrayOf(
-            if (topLeft)     r else 0f, if (topLeft)     r else 0f,
-            if (topRight)    r else 0f, if (topRight)    r else 0f,
-            if (bottomRight) r else 0f, if (bottomRight) r else 0f,
-            if (bottomLeft)  r else 0f, if (bottomLeft)  r else 0f
-        )
 
-        // 1. 更新視覺背景
-        card.background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColor(0xD9101820.toInt())
-            cornerRadii = radii
-        }
+        val shapeModel = com.google.android.material.shape.ShapeAppearanceModel.builder()
+            .setTopLeftCornerSize(if (topLeft) r else 0f)
+            .setTopRightCornerSize(if (topRight) r else 0f)
+            .setBottomRightCornerSize(if (bottomRight) r else 0f)
+            .setBottomLeftCornerSize(if (bottomLeft) r else 0f)
+            .build()
 
-        // 2. 自訂 ViewOutlineProvider：直接建立 Path，不走 GradientDrawable.getOutline()
-        card.outlineProvider = object : ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: Outline) {
-                val path = Path().apply {
-                    addRoundRect(
-                        RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()),
-                        radii,
-                        Path.Direction.CW
-                    )
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    outline.setPath(path)
-                } else {
-                    @Suppress("DEPRECATION")
-                    outline.setConvexPath(path)
-                }
-            }
-        }
-        card.clipToOutline = true
-        card.invalidateOutline()
+        // 1. 透過 MaterialCardView 統一處理所有內部元件的裁切（完美支援不規則圓角）
+        card.shapeAppearanceModel = shapeModel
+        
+        // 強制使用軟體渲染，解決在車機或特定 Android 版本上硬體加速導致的 Canvas.clipPath() 失效問題
+        card.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
 
-        // 3. 同步更新 ShapeableImageView 裁切形狀
-        ivAlbumCover?.shapeAppearanceModel =
-            com.google.android.material.shape.ShapeAppearanceModel.builder()
-                .setTopLeftCornerSize(if (topLeft)     r else 0f)
-                .setTopRightCornerSize(if (topRight)    r else 0f)
-                .setBottomRightCornerSize(if (bottomRight) r else 0f)
-                .setBottomLeftCornerSize(if (bottomLeft)  r else 0f)
-                .build()
+        // 2. 同步更新 ShapeableImageView 裁切形狀 (保證在舊裝置也能裁切)
+        ivAlbumCover?.shapeAppearanceModel = shapeModel
+        albumScrim?.shapeAppearanceModel = shapeModel
     }
 
     private fun applyTextAlignmentSettings() {
@@ -258,8 +233,10 @@ class MusicOverlayService : NotificationListenerService() {
             paramsTitle.gravity = android.view.Gravity.START
             paramsArtist.gravity = android.view.Gravity.START
             
-            // 漸層遮罩反轉，讓深色在左邊
-            albumScrim.scaleX = -1f
+            // 漸層遮罩反轉，讓深色在左邊，透明在右邊
+            if (albumScrim is android.widget.ImageView) {
+                albumScrim.setImageResource(R.drawable.card_scrim_reversed)
+            }
         } else {
             // 文字在右，留出左邊 110dp 給封面，右邊 20dp padding
             params.marginStart = 0
@@ -272,8 +249,10 @@ class MusicOverlayService : NotificationListenerService() {
             paramsTitle.gravity = android.view.Gravity.END
             paramsArtist.gravity = android.view.Gravity.END
 
-            // 恢復遮罩方向
-            albumScrim.scaleX = 1f
+            // 恢復遮罩方向 (左透明右深色)
+            if (albumScrim is android.widget.ImageView) {
+                albumScrim.setImageResource(R.drawable.card_scrim)
+            }
         }
         layoutText.layoutParams = params
     }
