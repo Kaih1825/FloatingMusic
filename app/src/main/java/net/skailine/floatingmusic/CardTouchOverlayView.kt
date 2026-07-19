@@ -52,6 +52,8 @@ class CardTouchOverlayView @JvmOverloads constructor(
         setWillNotDraw(true)
     }
 
+    var doubleTapEnabled = true
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
@@ -83,29 +85,35 @@ class CardTouchOverlayView @JvmOverloads constructor(
                 if (isDragging) {
                     listener?.onDragEnd()
                 } else {
-                    val currentTime = System.currentTimeMillis()
-                    if (currentTime - lastUpTime < doubleTapTimeout) {
-                        // 雙擊觸發
-                        pendingSingleClick?.let { clickHandler.removeCallbacks(it) }
-                        pendingSingleClick = null
-                        listener?.onDoubleTap()
-                        lastUpTime = 0L
-                    } else {
-                        // 單擊，延遲觸發以等待是否有雙擊
-                        lastUpTime = currentTime
-                        val zone = touchedZone
-                        val action = Runnable {
-                            when (zone) {
-                                Zone.LEFT   -> listener?.onPreviousClick()
-                                Zone.CENTER -> listener?.onPlayPauseClick()
-                                Zone.RIGHT  -> listener?.onNextClick()
-                                null        -> Unit
-                            }
+                    val zone = touchedZone
+                    val action = Runnable {
+                        when (zone) {
+                            Zone.LEFT   -> listener?.onPreviousClick()
+                            Zone.CENTER -> listener?.onPlayPauseClick()
+                            Zone.RIGHT  -> listener?.onNextClick()
+                            null -> {}
                         }
-                        pendingSingleClick = action
-                        clickHandler.postDelayed(action, doubleTapTimeout)
+                    }
+
+                    if (!doubleTapEnabled) {
+                        action.run()
+                    } else {
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastUpTime < doubleTapTimeout) {
+                            // 雙擊觸發
+                            pendingSingleClick?.let { clickHandler.removeCallbacks(it) }
+                            pendingSingleClick = null
+                            listener?.onDoubleTap()
+                            lastUpTime = 0L
+                        } else {
+                            // 單擊，延遲觸發以等待是否有雙擊
+                            lastUpTime = currentTime
+                            pendingSingleClick = action
+                            clickHandler.postDelayed(action, doubleTapTimeout)
+                        }
                     }
                 }
+                touchedZone = null
                 isDragging = false
             }
 

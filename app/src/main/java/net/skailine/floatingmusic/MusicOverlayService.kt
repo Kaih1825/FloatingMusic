@@ -597,6 +597,8 @@ class MusicOverlayService : NotificationListenerService() {
         
         overlayView.post {
             val ivFavorite = overlayView.findViewById<android.widget.ImageView>(R.id.ivFavoriteIcon)
+            val cardOverlay = overlayView.findViewById<CardTouchOverlayView>(R.id.cardTouchOverlay)
+            
             if (ivFavorite != null) {
                 if (hasFavoriteFeature) {
                     ivFavorite.visibility = View.VISIBLE
@@ -608,6 +610,10 @@ class MusicOverlayService : NotificationListenerService() {
                 } else {
                     ivFavorite.visibility = View.GONE
                 }
+            }
+            
+            if (cardOverlay != null) {
+                cardOverlay.doubleTapEnabled = hasFavoriteFeature
             }
         }
     }
