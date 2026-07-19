@@ -65,23 +65,47 @@
                     而是讓 TextView 本身 wrap_content，然後用 layout_gravity="end" 把整個 TextView 推到右邊。
                     這樣短字會靠右，長字會撐滿並完美執行跑馬燈！
                 -->
-                <TextView
-                    android:id="@+id/tvSongTitle"
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:id="@+id/layoutTitleWrapper"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="end"
-                    android:text="Song Title"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="#FFFFFF"
-                    android:letterSpacing="0.01"
-                    android:singleLine="true"
-                    android:ellipsize="marquee"
-                    android:marqueeRepeatLimit="marquee_forever"
-                    android:focusable="true"
-                    android:focusableInTouchMode="true"
-                    android:requiresFadingEdge="horizontal"
-                    android:fadingEdgeLength="16dp" />
+                    android:layout_gravity="end">
+
+                    <TextView
+                        android:id="@+id/tvSongTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Song Title"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFF"
+                        android:letterSpacing="0.01"
+                        android:singleLine="true"
+                        android:ellipsize="marquee"
+                        android:marqueeRepeatLimit="marquee_forever"
+                        android:focusable="true"
+                        android:focusableInTouchMode="true"
+                        android:requiresFadingEdge="horizontal"
+                        android:fadingEdgeLength="16dp"
+                        app:layout_constrainedWidth="true"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintEnd_toStartOf="@+id/ivFavoriteIcon" />
+
+                    <!-- 加入最愛狀態圖示 (放在歌名右邊) -->
+                    <ImageView
+                        android:id="@+id/ivFavoriteIcon"
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_add_circle"
+                        android:visibility="gone"
+                        app:layout_constraintStart_toEndOf="@id/tvSongTitle"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintEnd_toEndOf="parent" />
+                </androidx.constraintlayout.widget.ConstraintLayout>
 
                 <TextView
                     android:id="@+id/tvArtist"

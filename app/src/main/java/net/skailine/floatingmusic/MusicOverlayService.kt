@@ -21,6 +21,7 @@ import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.TextView
+import android.widget.Toast
 
 class MusicOverlayService : NotificationListenerService() {
 
@@ -235,11 +236,11 @@ class MusicOverlayService : NotificationListenerService() {
     private fun applyTextAlignmentSettings() {
         val isAlignLeft = prefs.getBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)
         val layoutText = overlayView.findViewById<android.widget.LinearLayout>(R.id.layoutText)
-        val tvSongTitle = overlayView.findViewById<TextView>(R.id.tvSongTitle)
+        val layoutTitleWrapper = overlayView.findViewById<android.view.View>(R.id.layoutTitleWrapper)
         val tvArtist = overlayView.findViewById<TextView>(R.id.tvArtist)
         val albumScrim = overlayView.findViewById<View>(R.id.albumScrim)
 
-        if (layoutText == null || tvSongTitle == null || tvArtist == null || albumScrim == null) return
+        if (layoutText == null || layoutTitleWrapper == null || tvArtist == null || albumScrim == null) return
 
         val params = layoutText.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
         
@@ -248,30 +249,28 @@ class MusicOverlayService : NotificationListenerService() {
             params.marginStart = (20 * resources.displayMetrics.density).toInt()
             layoutText.setPadding(0, 0, (110 * resources.displayMetrics.density).toInt(), 0)
             
-            // TextView 靠左
-            val titleParams = tvSongTitle.layoutParams as android.widget.LinearLayout.LayoutParams
-            titleParams.gravity = Gravity.START
-            tvSongTitle.layoutParams = titleParams
+            // 讓整個 layoutText 內的元件靠左對齊
+            layoutText.gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
             
-            val artistParams = tvArtist.layoutParams as android.widget.LinearLayout.LayoutParams
-            artistParams.gravity = Gravity.START
-            tvArtist.layoutParams = artistParams
-
-            // 反轉遮罩，讓深色在左邊
+            // 單獨設定文字元件本身的 gravity 確保多行/跑馬燈方向正確
+            val paramsTitle = layoutTitleWrapper.layoutParams as android.widget.LinearLayout.LayoutParams
+            val paramsArtist = tvArtist.layoutParams as android.widget.LinearLayout.LayoutParams
+            paramsTitle.gravity = android.view.Gravity.START
+            paramsArtist.gravity = android.view.Gravity.START
+            
+            // 漸層遮罩反轉，讓深色在左邊
             albumScrim.scaleX = -1f
         } else {
             // 文字在右，留出左邊 110dp 給封面，右邊 20dp padding
-            params.marginStart = (110 * resources.displayMetrics.density).toInt()
-            layoutText.setPadding(0, 0, (20 * resources.displayMetrics.density).toInt(), 0)
+            params.marginStart = 0
+            layoutText.setPadding((110 * resources.displayMetrics.density).toInt(), 0, (20 * resources.displayMetrics.density).toInt(), 0)
             
-            // TextView 靠右
-            val titleParams = tvSongTitle.layoutParams as android.widget.LinearLayout.LayoutParams
-            titleParams.gravity = Gravity.END
-            tvSongTitle.layoutParams = titleParams
+            layoutText.gravity = android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
             
-            val artistParams = tvArtist.layoutParams as android.widget.LinearLayout.LayoutParams
-            artistParams.gravity = Gravity.END
-            tvArtist.layoutParams = artistParams
+            val paramsTitle = layoutTitleWrapper.layoutParams as android.widget.LinearLayout.LayoutParams
+            val paramsArtist = tvArtist.layoutParams as android.widget.LinearLayout.LayoutParams
+            paramsTitle.gravity = android.view.Gravity.END
+            paramsArtist.gravity = android.view.Gravity.END
 
             // 恢復遮罩方向
             albumScrim.scaleX = 1f
@@ -331,6 +330,10 @@ class MusicOverlayService : NotificationListenerService() {
 
             override fun onNextClick() {
                 currentController?.transportControls?.skipToNext()
+            }
+
+            override fun onDoubleTap() {
+                toggleFavorite()
             }
 
             override fun onDrag(dx: Float, dy: Float) {
@@ -400,6 +403,39 @@ class MusicOverlayService : NotificationListenerService() {
                     .apply()
             }
         }
+    }
+
+    private fun toggleFavorite() {
+        val controller = currentController ?: return
+        
+        // 尋找可能的 CustomAction (許多音樂播放器透過 CustomAction 提供「加入最愛」功能)
+        val customActions = controller.playbackState?.customActions
+        if (customActions != null && customActions.isNotEmpty()) {
+            val likeAction = customActions.find { 
+                val actionName = it.action.lowercase()
+                val name = it.name?.toString()?.lowercase() ?: ""
+                actionName.contains("favorite") || actionName.contains("heart") || 
+                actionName.contains("like") || actionName.contains("thumb") ||
+                actionName.contains("collection") || actionName.contains("add_to") || actionName.contains("remove_from") || actionName.contains("check_fill") ||
+                name.contains("favorite") || name.contains("heart") || 
+                name.contains("like") || name.contains("thumb") || name.contains("collection") || name.contains("add_to") || name.contains("remove_from") || name.contains("check_fill")
+            }
+            
+            if (likeAction != null) {
+                controller.transportControls.sendCustomAction(likeAction, null)
+                android.util.Log.d("FloatingMusic", "已切換最愛, Action: ${likeAction.action}")
+                return
+            } else {
+                val allActions = customActions.joinToString { it.action.substringAfterLast('.') }
+                android.util.Log.d("FloatingMusic", "找不到最愛按鈕, 可用 Action: $allActions")
+            }
+        } else {
+            android.util.Log.d("FloatingMusic", "無 CustomActions, 播放器未公開最愛功能")
+        }
+        
+        // 若找不到合適的 CustomAction，嘗試使用 Android 標準的 Rating API
+        controller.transportControls.setRating(android.media.Rating.newHeartRating(true))
+        android.util.Log.d("FloatingMusic", "已傳送標準最愛指令")
     }
 
     // ── Media Session ─────────────────────────────────────────────────────────
@@ -519,6 +555,59 @@ class MusicOverlayService : NotificationListenerService() {
                 uiHandler.post(progressUpdater)
             } else {
                 updateProgress()
+            }
+        }
+        
+        updateFavoriteIcon()
+    }
+
+    private fun updateFavoriteIcon() {
+        if (!::overlayView.isInitialized || !isOverlayAdded) return
+        val controller = currentController ?: return
+        val customActions = controller.playbackState?.customActions ?: emptyList()
+        val metadata = controller.metadata
+        
+        var isFavorited = false
+        var hasFavoriteFeature = false
+        
+        customActions.forEach { action ->
+            val actionName = action.action.lowercase()
+            val name = action.name?.toString()?.lowercase() ?: ""
+            if (actionName.contains("check_fill") || actionName.contains("remove_from") || name.contains("remove") || name.contains("dislike") || actionName.contains("unthumb")) {
+                isFavorited = true
+                hasFavoriteFeature = true
+            } else if (actionName.contains("favorite") || actionName.contains("heart") || actionName.contains("like") || actionName.contains("thumb") || actionName.contains("collection") || actionName.contains("add_to") ||
+                       name.contains("favorite") || name.contains("heart") || name.contains("like") || name.contains("thumb") || name.contains("collection") || name.contains("add_to")) {
+                hasFavoriteFeature = true
+            }
+        }
+        
+        // YouTube Music 常常把按讚狀態放在 Metadata 的 Rating 裡面
+        if (metadata != null) {
+            val rating = metadata.getRating(android.media.MediaMetadata.METADATA_KEY_USER_RATING)
+            if (rating != null) {
+                hasFavoriteFeature = true
+                if (rating.isRated) {
+                    if (rating.hasHeart() || rating.isThumbUp) {
+                        isFavorited = true
+                    }
+                }
+            }
+        }
+        
+        overlayView.post {
+            val ivFavorite = overlayView.findViewById<android.widget.ImageView>(R.id.ivFavoriteIcon)
+            if (ivFavorite != null) {
+                if (hasFavoriteFeature) {
+                    ivFavorite.visibility = View.VISIBLE
+                    if (isFavorited) {
+                        ivFavorite.setImageResource(R.drawable.ic_check_circle)
+                    } else {
+                        ivFavorite.setImageResource(R.drawable.ic_add_circle)
+                    }
+                } else {
+                    ivFavorite.visibility = View.GONE
+                }
             }
         }
     }

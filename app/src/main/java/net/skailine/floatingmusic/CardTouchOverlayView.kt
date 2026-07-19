@@ -22,6 +22,7 @@ class CardTouchOverlayView @JvmOverloads constructor(
         fun onPreviousClick()
         fun onPlayPauseClick()
         fun onNextClick()
+        fun onDoubleTap()
         fun onDrag(dx: Float, dy: Float)
         fun onDragEnd()
     }
@@ -39,6 +40,10 @@ class CardTouchOverlayView @JvmOverloads constructor(
     private var lastDragY = 0f
 
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private val doubleTapTimeout = ViewConfiguration.getDoubleTapTimeout().toLong()
+    private var lastUpTime = 0L
+    private val clickHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingSingleClick: Runnable? = null
 
     init {
         background = null
@@ -63,6 +68,9 @@ class CardTouchOverlayView @JvmOverloads constructor(
                 val dy = event.rawY - initialTouchY
                 if (!isDragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                     isDragging = true
+                    // 如果開始拖曳，取消正在等待的單擊事件
+                    pendingSingleClick?.let { clickHandler.removeCallbacks(it) }
+                    pendingSingleClick = null
                 }
                 if (isDragging) {
                     listener?.onDrag(event.rawX - lastDragX, event.rawY - lastDragY)
@@ -75,11 +83,27 @@ class CardTouchOverlayView @JvmOverloads constructor(
                 if (isDragging) {
                     listener?.onDragEnd()
                 } else {
-                    when (touchedZone) {
-                        Zone.LEFT   -> listener?.onPreviousClick()
-                        Zone.CENTER -> listener?.onPlayPauseClick()
-                        Zone.RIGHT  -> listener?.onNextClick()
-                        null        -> Unit
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastUpTime < doubleTapTimeout) {
+                        // 雙擊觸發
+                        pendingSingleClick?.let { clickHandler.removeCallbacks(it) }
+                        pendingSingleClick = null
+                        listener?.onDoubleTap()
+                        lastUpTime = 0L
+                    } else {
+                        // 單擊，延遲觸發以等待是否有雙擊
+                        lastUpTime = currentTime
+                        val zone = touchedZone
+                        val action = Runnable {
+                            when (zone) {
+                                Zone.LEFT   -> listener?.onPreviousClick()
+                                Zone.CENTER -> listener?.onPlayPauseClick()
+                                Zone.RIGHT  -> listener?.onNextClick()
+                                null        -> Unit
+                            }
+                        }
+                        pendingSingleClick = action
+                        clickHandler.postDelayed(action, doubleTapTimeout)
                     }
                 }
                 isDragging = false
@@ -89,6 +113,8 @@ class CardTouchOverlayView @JvmOverloads constructor(
                 if (isDragging) {
                     listener?.onDragEnd()
                 }
+                pendingSingleClick?.let { clickHandler.removeCallbacks(it) }
+                pendingSingleClick = null
                 isDragging = false
             }
         }
