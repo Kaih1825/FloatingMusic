@@ -50,14 +50,18 @@ class SweepTouchView @JvmOverloads constructor(
 
     init {
         // 讀取 XML 自訂屬性
-        context.obtainStyledAttributes(attrs, R.styleable.SweepTouchView).use { ta ->
-            sweepDirection = SweepDirection.entries[
-                ta.getInt(R.styleable.SweepTouchView_sweepDirection, 2)
-            ]
-            sweepColor = ta.getColor(
-                R.styleable.SweepTouchView_sweepColor,
-                Color.argb(70, 255, 255, 255)
-            )
+        context.obtainStyledAttributes(attrs, R.styleable.SweepTouchView).apply {
+            try {
+                sweepDirection = SweepDirection.entries[
+                    getInt(R.styleable.SweepTouchView_sweepDirection, 2)
+                ]
+                sweepColor = getColor(
+                    R.styleable.SweepTouchView_sweepColor,
+                    Color.argb(70, 255, 255, 255)
+                )
+            } finally {
+                recycle()
+            }
         }
         isClickable = true
     }

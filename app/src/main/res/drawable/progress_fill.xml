@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 背景層：透明 -->
+    <item android:id="@android:id/background">
+        <color android:color="@android:color/transparent" />
+    </item>
+    <!-- 進度層：由左至右出現的微妙白光遮罩 -->
+    <item android:id="@android:id/progress">
+        <clip
+            android:clipOrientation="horizontal"
+            android:gravity="left">
+            <shape android:shape="rectangle">
+                <solid android:color="#2AFFFFFF" />
+            </shape>
+        </clip>
+    </item>
+</layer-list>
