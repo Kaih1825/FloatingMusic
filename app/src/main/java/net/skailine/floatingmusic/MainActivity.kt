@@ -7,7 +7,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
-import android.widget.Switch
+import com.google.android.material.slider.Slider
+import com.google.android.material.switchmaterial.SwitchMaterial
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -25,12 +26,12 @@ class MainActivity : AppCompatActivity() {
         const val KEY_OVERLAY_SIZE        = "overlay_size"
     }
 
-    private lateinit var switchTopLeft: Switch
-    private lateinit var switchTopRight: Switch
-    private lateinit var switchBottomLeft: Switch
-    private lateinit var switchBottomRight: Switch
-    private lateinit var switchTextAlignLeft: Switch
-    private lateinit var seekOverlaySize: android.widget.SeekBar
+    private lateinit var switchTopLeft: SwitchMaterial
+    private lateinit var switchTopRight: SwitchMaterial
+    private lateinit var switchBottomLeft: SwitchMaterial
+    private lateinit var switchBottomRight: SwitchMaterial
+    private lateinit var switchTextAlignLeft: SwitchMaterial
+    private lateinit var seekOverlaySize: Slider
     private lateinit var tvOverlaySizeLabel: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,8 +56,13 @@ class MainActivity : AppCompatActivity() {
         switchTextAlignLeft.isChecked = prefs.getBoolean(KEY_TEXT_ALIGN_LEFT,   false)
         
         val savedProgress = prefs.getInt(KEY_OVERLAY_SIZE, 50)
-        seekOverlaySize.progress = savedProgress
+        seekOverlaySize.value = savedProgress.toFloat()
         updateSizeLabel(savedProgress)
+
+        seekOverlaySize.setLabelFormatter { value ->
+            val scale = 0.5f + (value / 100f)
+            String.format("%.2fx", scale)
+        }
 
         // 每個 Switch 切換時立即儲存。
         // Service 透過 OnSharedPreferenceChangeListener 監聽，會自動即時套用，不需廣播。
@@ -67,7 +73,7 @@ class MainActivity : AppCompatActivity() {
                 .putBoolean(KEY_CORNER_BOTTOM_LEFT,  switchBottomLeft.isChecked)
                 .putBoolean(KEY_CORNER_BOTTOM_RIGHT, switchBottomRight.isChecked)
                 .putBoolean(KEY_TEXT_ALIGN_LEFT,     switchTextAlignLeft.isChecked)
-                .putInt(KEY_OVERLAY_SIZE,            seekOverlaySize.progress)
+                .putInt(KEY_OVERLAY_SIZE,            seekOverlaySize.value.toInt())
                 .apply()
         }
 
@@ -77,27 +83,16 @@ class MainActivity : AppCompatActivity() {
         switchBottomRight.setOnCheckedChangeListener { _, _ -> saveCorners() }
         switchTextAlignLeft.setOnCheckedChangeListener { _, _ -> saveCorners() }
 
-        seekOverlaySize.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                // 每 5 單位為一刻度 (0.05倍)
-                val snappedProgress = Math.round(progress / 5f) * 5
-                updateSizeLabel(snappedProgress)
-                if (fromUser) {
-                    // 即時儲存吸附後的數值，讓 Service 立即反應
-                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-                        .putInt(KEY_OVERLAY_SIZE, snappedProgress)
-                        .apply()
-                }
+        seekOverlaySize.addOnChangeListener { _, value, fromUser ->
+            val progress = value.toInt()
+            updateSizeLabel(progress)
+            if (fromUser) {
+                // 即時儲存數值，讓 Service 立即反應
+                getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                    .putInt(KEY_OVERLAY_SIZE, progress)
+                    .apply()
             }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
-                // 放開手指時，讓滑桿的物理位置也吸附過去
-                seekBar?.let {
-                    val snappedProgress = Math.round(it.progress / 5f) * 5
-                    it.progress = snappedProgress
-                }
-            }
-        })
+        }
 
         // 啟動按鈕
         findViewById<Button>(R.id.btnStart).setOnClickListener {
