@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
         const val KEY_CORNER_BOTTOM_LEFT = "corner_bottom_left"
         const val KEY_CORNER_BOTTOM_RIGHT = "corner_bottom_right"
         const val KEY_TEXT_ALIGN_LEFT = "text_align_left"
+        const val KEY_AUTO_SNAP_CORNER = "auto_snap_corner"
         const val KEY_OVERLAY_SIZE = "overlay_size"
         const val KEY_OVERLAY_SHOW = "overlay_should_show"
     }
@@ -127,7 +128,7 @@ class MainActivity : ComponentActivity() {
         return enabledListeners.contains(packageName)
     }
 }
-
+@Suppress("UnusedBoxWithConstraintsScope")
 @Composable
 fun AdaptiveSettingsScreen(
     prefs: SharedPreferences,
@@ -185,6 +186,7 @@ fun AdaptiveSettingsScreen(
             var bottomLeft by remember { mutableStateOf(prefs.getBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, false)) }
             var bottomRight by remember { mutableStateOf(prefs.getBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)) }
             var alignLeft by remember { mutableStateOf(prefs.getBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)) }
+            var autoSnapCorner by remember { mutableStateOf(prefs.getBoolean(MainActivity.KEY_AUTO_SNAP_CORNER, true)) }
             var overlaySize by remember { mutableFloatStateOf(prefs.getInt(MainActivity.KEY_OVERLAY_SIZE, 50).toFloat()) }
 
             DisposableEffect(prefs) {
@@ -195,6 +197,7 @@ fun AdaptiveSettingsScreen(
                         MainActivity.KEY_CORNER_BOTTOM_LEFT -> bottomLeft = sharedPreferences.getBoolean(key, false)
                         MainActivity.KEY_CORNER_BOTTOM_RIGHT -> bottomRight = sharedPreferences.getBoolean(key, true)
                         MainActivity.KEY_TEXT_ALIGN_LEFT -> alignLeft = sharedPreferences.getBoolean(key, false)
+                        MainActivity.KEY_AUTO_SNAP_CORNER -> autoSnapCorner = sharedPreferences.getBoolean(key, true)
                         MainActivity.KEY_OVERLAY_SIZE -> overlaySize = sharedPreferences.getInt(key, 50).toFloat()
                     }
                 }
@@ -249,11 +252,13 @@ fun AdaptiveSettingsScreen(
                             }
                         }
                         Column(modifier = Modifier.weight(1f)) {
-                            OtherCard(alignLeft, overlaySize, onAlignChange = { 
+                            OtherCard(alignLeft, overlaySize, autoSnapCorner, onAlignChange = { 
                                 alignLeft = it; updatePref(MainActivity.KEY_TEXT_ALIGN_LEFT, it)
                             }, onSizeChange = {
                                 overlaySize = it
                                 prefs.edit { putInt(MainActivity.KEY_OVERLAY_SIZE, it.toInt()) }
+                            }, onAutoSnapChange = {
+                                autoSnapCorner = it; updatePref(MainActivity.KEY_AUTO_SNAP_CORNER, it)
                             })
                             Spacer(modifier = Modifier.height(24.dp))
                             HintSection()
@@ -277,11 +282,13 @@ fun AdaptiveSettingsScreen(
                         updatePref(key, value)
                     }
                     Spacer(modifier = Modifier.height(24.dp))
-                    OtherCard(alignLeft, overlaySize, onAlignChange = { 
+                    OtherCard(alignLeft, overlaySize, autoSnapCorner, onAlignChange = { 
                         alignLeft = it; updatePref(MainActivity.KEY_TEXT_ALIGN_LEFT, it)
                     }, onSizeChange = {
                         overlaySize = it
                         prefs.edit { putInt(MainActivity.KEY_OVERLAY_SIZE, it.toInt()) }
+                    }, onAutoSnapChange = {
+                        autoSnapCorner = it; updatePref(MainActivity.KEY_AUTO_SNAP_CORNER, it)
                     })
                     Spacer(modifier = Modifier.height(24.dp))
                     HintSection()
@@ -394,8 +401,10 @@ fun CornersCard(
 fun OtherCard(
     alignLeft: Boolean,
     overlaySize: Float,
+    autoSnapCorner: Boolean,
     onAlignChange: (Boolean) -> Unit,
-    onSizeChange: (Float) -> Unit
+    onSizeChange: (Float) -> Unit,
+    onAutoSnapChange: (Boolean) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -409,6 +418,12 @@ fun OtherCard(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
+
+            SwitchRow("邊緣自動調整圓角", autoSnapCorner) {
+                onAutoSnapChange(it)
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
             SwitchRow("文字靠左顯示", alignLeft) {
                 onAlignChange(it)

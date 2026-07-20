@@ -39,6 +39,88 @@ class MusicOverlayService : NotificationListenerService() {
     private val controllerCallbacks = mutableMapOf<MediaController, MediaController.Callback>()
     private var isOverlayAdded = false
     
+    private var isExpanded = false
+    private var expandAnimator: android.animation.ValueAnimator? = null
+    private val collapseRunnable = Runnable { setExpanded(false) }
+
+    private fun resetCollapseTimer() {
+        uiHandler.removeCallbacks(collapseRunnable)
+        if (isExpanded) {
+            uiHandler.postDelayed(collapseRunnable, 15000)
+        }
+    }
+
+    private fun setExpanded(expanded: Boolean) {
+        if (isExpanded == expanded) return
+        isExpanded = expanded
+
+        val progress = prefs.getInt(MainActivity.KEY_OVERLAY_SIZE, 50)
+        val scale = 0.5f + (progress / 100f)
+
+        val card = overlayView.findViewById<View>(R.id.cardOverlay) ?: return
+        
+        val baseWidthPx = (340 * resources.displayMetrics.density).toInt()
+        val baseHeightPx = (72 * resources.displayMetrics.density).toInt()
+        val minWidthPx = baseHeightPx
+
+        val targetBaseWidthPx = if (expanded) baseWidthPx else minWidthPx
+        val currentBaseWidthPx = card.layoutParams.width
+
+        expandAnimator?.cancel()
+        
+        val screenWidth = resources.displayMetrics.widthPixels
+        val startWindowWidth = if (overlayParams.width > 0) overlayParams.width else (currentBaseWidthPx * scale).toInt()
+        val viewHalfWidth = startWindowWidth / 2f
+        val maxSafeX = (screenWidth / 2f) - viewHalfWidth
+        val edgeThreshold = if (maxSafeX > 0) maxSafeX else 0f
+        
+        val initialX = overlayParams.x
+        val snapMode = when {
+            initialX <= -edgeThreshold + 5 -> -1 // Snapped left
+            initialX >= edgeThreshold - 5 -> 1   // Snapped right
+            else -> 0                            // Middle
+        }
+
+        val albumScrim = overlayView.findViewById<View>(R.id.albumScrim)
+
+        expandAnimator = android.animation.ValueAnimator.ofInt(currentBaseWidthPx, targetBaseWidthPx).apply {
+            duration = 300
+            interpolator = android.view.animation.DecelerateInterpolator(1.5f)
+            addUpdateListener { anim ->
+                val w = anim.animatedValue as Int
+                val params = card.layoutParams
+                params.width = w
+                card.layoutParams = params
+
+                val windowWidth = (w * scale).toInt()
+                overlayParams.width = windowWidth
+                
+                if (snapMode == -1) {
+                    overlayParams.x = -((screenWidth / 2f) - (windowWidth / 2f)).toInt()
+                } else if (snapMode == 1) {
+                    overlayParams.x = ((screenWidth / 2f) - (windowWidth / 2f)).toInt()
+                }
+                
+                val progress = (w - minWidthPx).toFloat() / (baseWidthPx - minWidthPx)
+                albumScrim?.alpha = progress.coerceIn(0f, 1f)
+                
+                if (isOverlayAdded) {
+                    windowManager.updateViewLayout(overlayView, overlayParams)
+                }
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    checkAndUpdateSnapPosition(overlayParams.x, overlayParams.width)
+                }
+            })
+            start()
+        }
+
+        if (expanded) {
+            resetCollapseTimer()
+        }
+    }
+    
     private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val progressUpdater = object : Runnable {
         override fun run() {
@@ -73,6 +155,22 @@ class MusicOverlayService : NotificationListenerService() {
                 applyCornerSettings()
                 applyTextAlignmentSettings()
                 applySizeSettings()
+            }
+        }
+        
+        if (key == MainActivity.KEY_AUTO_SNAP_CORNER && isOverlayAdded) {
+            val autoSnapCorner = sharedPrefs.getBoolean(key, true)
+            if (autoSnapCorner) {
+                overlayView.post {
+                    checkAndUpdateSnapPosition(overlayParams.x, overlayParams.width)
+                }
+            } else {
+                sharedPrefs.edit()
+                    .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, true)
+                    .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, true)
+                    .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
+                    .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
+                    .apply()
             }
         }
     }
@@ -146,6 +244,11 @@ class MusicOverlayService : NotificationListenerService() {
             applyCornerSettings()
             applyTextAlignmentSettings()
             applySizeSettings()
+            
+            // 確保第一次出現時根據實際位置決定圓角
+            overlayView.post {
+                checkAndUpdateSnapPosition(overlayParams.x, if (overlayParams.width > 0) overlayParams.width else overlayView.width)
+            }
             
         } catch (e: Exception) {
             e.printStackTrace()
@@ -284,8 +387,17 @@ class MusicOverlayService : NotificationListenerService() {
         // 2. 調整 WindowManager 的 LayoutParams 邊界，避免放大時被裁切
         val baseWidthPx = (340 * resources.displayMetrics.density).toInt()
         val baseHeightPx = (72 * resources.displayMetrics.density).toInt()
+        
+        val currentBaseWidthPx = if (isExpanded) baseWidthPx else baseHeightPx
 
-        overlayParams.width = (baseWidthPx * scale).toInt()
+        val params = card.layoutParams
+        params.width = currentBaseWidthPx
+        card.layoutParams = params
+        
+        val albumScrim = overlayView.findViewById<View>(R.id.albumScrim)
+        albumScrim?.alpha = if (isExpanded) 1f else 0f
+
+        overlayParams.width = (currentBaseWidthPx * scale).toInt()
         overlayParams.height = (baseHeightPx * scale).toInt()
 
         if (isOverlayAdded) {
@@ -306,26 +418,37 @@ class MusicOverlayService : NotificationListenerService() {
         overlayView.findViewById<CardTouchOverlayView>(R.id.cardTouchOverlay)
             .listener = object : CardTouchOverlayView.Listener {
 
+            private fun handleInteraction(action: () -> Unit) {
+                if (!isExpanded) {
+                    setExpanded(true)
+                } else {
+                    action()
+                    resetCollapseTimer()
+                }
+            }
+
             override fun onPreviousClick() {
-                currentController?.transportControls?.skipToPrevious()
+                handleInteraction { currentController?.transportControls?.skipToPrevious() }
             }
 
             override fun onPlayPauseClick() {
-                currentController?.playbackState?.let { state ->
-                    if (state.state == android.media.session.PlaybackState.STATE_PLAYING) {
-                        currentController?.transportControls?.pause()
-                    } else {
-                        currentController?.transportControls?.play()
+                handleInteraction {
+                    currentController?.playbackState?.let { state ->
+                        if (state.state == android.media.session.PlaybackState.STATE_PLAYING) {
+                            currentController?.transportControls?.pause()
+                        } else {
+                            currentController?.transportControls?.play()
+                        }
                     }
                 }
             }
 
             override fun onNextClick() {
-                currentController?.transportControls?.skipToNext()
+                handleInteraction { currentController?.transportControls?.skipToNext() }
             }
 
             override fun onDoubleTap() {
-                toggleFavorite()
+                handleInteraction { toggleFavorite() }
             }
 
             override fun onDrag(dx: Float, dy: Float) {
@@ -333,58 +456,10 @@ class MusicOverlayService : NotificationListenerService() {
                 overlayParams.y += dy.toInt()
                 windowManager.updateViewLayout(overlayView, overlayParams)
                 
-                // 準確計算「貼齊邊緣」的位置
-                // Gravity.CENTER_HORIZONTAL 讓 x=0 代表置中。
-                // 當懸浮窗貼齊左側緣時，x 會是 -(screenWidth/2 - viewWidth/2)
-                val screenWidth = resources.displayMetrics.widthPixels
-                val actualWidth = if (overlayParams.width > 0) overlayParams.width else overlayView.width
-                val viewHalfWidth = actualWidth / 2f
-                val maxSafeX = (screenWidth / 2f) - viewHalfWidth
+                checkAndUpdateSnapPosition(overlayParams.x, if (overlayParams.width > 0) overlayParams.width else overlayView.width)
                 
-                // 改為：必須「完全碰到」邊緣（或稍微超過）才當作邊緣吸附
-                // 這樣就不會發生「還沒碰到就提早判斷」的問題
-                val edgeThreshold = if (maxSafeX > 0) maxSafeX else 0f
-                
-                val topLeft = prefs.getBoolean(MainActivity.KEY_CORNER_TOP_LEFT, false)
-                val topRight = prefs.getBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
-                val isSnappedLeft = !topLeft && topRight
-                val isSnappedRight = topLeft && !topRight
-                val isAllRounded = topLeft && topRight
-                
-                // 如果被推到極左側邊緣
-                if (overlayParams.x < -edgeThreshold) {
-                    if (!isSnappedLeft) {
-                        prefs.edit()
-                            .putBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)
-                            .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, false)
-                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, false)
-                            .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
-                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
-                            .apply()
-                    }
-                } 
-                // 如果被推到極右側邊緣
-                else if (overlayParams.x > edgeThreshold) {
-                    if (!isSnappedRight) {
-                        prefs.edit()
-                            .putBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, true)
-                            .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, true)
-                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, true)
-                            .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, false)
-                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, false)
-                            .apply()
-                    }
-                }
-                // 在中間區域
-                else {
-                    if (!isAllRounded) {
-                        prefs.edit()
-                            .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, true)
-                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, true)
-                            .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
-                            .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
-                            .apply()
-                    }
+                if (isExpanded) {
+                    resetCollapseTimer()
                 }
             }
 
@@ -428,6 +503,55 @@ class MusicOverlayService : NotificationListenerService() {
         // 若找不到合適的 CustomAction，嘗試使用 Android 標準的 Rating API
         controller.transportControls.setRating(android.media.Rating.newHeartRating(true))
         android.util.Log.d("FloatingMusic", "已傳送標準最愛指令")
+    }
+
+    private fun checkAndUpdateSnapPosition(currentX: Int, viewWidth: Int) {
+        val autoSnapCorner = prefs.getBoolean(MainActivity.KEY_AUTO_SNAP_CORNER, true)
+        if (!autoSnapCorner) return
+        
+        val screenWidth = resources.displayMetrics.widthPixels
+        val actualWidth = if (viewWidth > 0) viewWidth else overlayView.width
+        val viewHalfWidth = actualWidth / 2f
+        val maxSafeX = (screenWidth / 2f) - viewHalfWidth
+        
+        val edgeThreshold = if (maxSafeX > 0) maxSafeX else 0f
+        
+        val topLeft = prefs.getBoolean(MainActivity.KEY_CORNER_TOP_LEFT, false)
+        val topRight = prefs.getBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
+        val isSnappedLeft = !topLeft && topRight
+        val isSnappedRight = topLeft && !topRight
+        val isAllRounded = topLeft && topRight
+        
+        if (currentX <= -edgeThreshold + 5) {
+            if (!isSnappedLeft) {
+                prefs.edit()
+                    .putBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, false)
+                    .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, false)
+                    .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, false)
+                    .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
+                    .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
+                    .apply()
+            }
+        } else if (currentX >= edgeThreshold - 5) {
+            if (!isSnappedRight) {
+                prefs.edit()
+                    .putBoolean(MainActivity.KEY_TEXT_ALIGN_LEFT, true)
+                    .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, true)
+                    .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, true)
+                    .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, false)
+                    .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, false)
+                    .apply()
+            }
+        } else {
+            if (!isAllRounded) {
+                prefs.edit()
+                    .putBoolean(MainActivity.KEY_CORNER_TOP_LEFT, true)
+                    .putBoolean(MainActivity.KEY_CORNER_BOTTOM_LEFT, true)
+                    .putBoolean(MainActivity.KEY_CORNER_TOP_RIGHT, true)
+                    .putBoolean(MainActivity.KEY_CORNER_BOTTOM_RIGHT, true)
+                    .apply()
+            }
+        }
     }
 
     // ── Media Session ─────────────────────────────────────────────────────────
